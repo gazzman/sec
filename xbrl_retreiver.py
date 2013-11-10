@@ -8,6 +8,7 @@ __contributors__ = []
 from collections import namedtuple
 try: from collections import OrderedDict # >= 2.7
 except ImportError: from ordereddict import OrderedDict # 2.6
+import lxml.etree as etree
 import os
 import pickle
 import re
@@ -23,6 +24,7 @@ UASTRING=('Mozilla/5.0 (X11; Linux x86_64; rv:10.0.5) Gecko/20120606'
 HEADER = {'User-Agent' : UASTRING}
 SERVER = 'http://sec.gov'
 DATEFORMAT = '%Y-%m-%dT%H:%M:%S'
+IMPORTED_SCHEMA_DIR = 'imported_schemas'
 
 Submission = namedtuple('Submission', ['date', 'title', 'sub_url', 'form'])
 
@@ -70,6 +72,8 @@ class FilingURLs:
         self.dirname = '%i/' % cik
         if not os.path.exists(self.dirname):
             os.makedirs(self.dirname)
+        if not os.path.exists(IMPORTED_SCHEMA_DIR):
+            os.makedirs(IMPORTED_SCHEMA_DIR)
         self.cik = cik
         self.sub_urlfile = '%i_submissions.pkl' % cik
         try:
@@ -183,7 +187,32 @@ class FilingURLs:
                     page = urllib2.urlopen(req)
                     with open('%s/%s' % (self.dirname, fname), 'w') as f:
                         f.write(page.read())
+                print fname
+                if '.xsd' == fname[-4:]:
+                    self.schema_fname = fname
+                    self.import_additional_schemas(refresh=refresh)
+                    
         print >> sys.stderr, 'XBRL filings pulled.'
+
+    def import_additional_schemas(self, refresh=False):
+        try:
+            assert type(self.schema_fname) == unicode
+        except AttributeError as err:
+            print >> sys.stderr, 'Schema filename not initialized. Run save_xbrl_filings first.'
+            return None
+        for event, element in etree.iterparse('%s/%s' % (self.dirname, self.schema_fname)):
+            if 'import' in element.tag:
+                url = element.attrib['schemaLocation']
+                fname = url.split('/')[-1]
+                if refresh == True or not os.path.exists('%s/%s' % (IMPORTED_SCHEMA_DIR, fname)):
+                    outmsg = 'Grabbing schema %s' % fname
+                    print >> sys.stderr, outmsg
+                    req = urllib2.Request(url, headers=HEADER)
+                    page = urllib2.urlopen(req)
+                    with open('%s/%s' % (IMPORTED_SCHEMA_DIR, fname), 'wb') as f:
+                        f.write(page.read())
+            if element.getparent() is None: break # fix for lxml bug #1185701
+        print >> sys.stderr, 'Additional schemas pulled.'
 
 if __name__ == '__main__':
     """First argument is the stock ticker
@@ -195,3 +224,4 @@ if __name__ == '__main__':
     f = FilingURLs(cik)
     f.pull_xbrl_urls()
     f.save_xbrl_filings()
+    f.import_additional_schemas()
