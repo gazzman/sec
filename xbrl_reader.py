@@ -1,11 +1,12 @@
 #!/usr/bin/python
-
-__version__ = ".01"
+__version__ = ".02"
 __author__ = "gazzman"
 __copyright__ = "(C) gazzman GNU GPL 3."
 __contributors__ = []
 
 from datetime import datetime
+from StringIO import StringIO
+import csv
 import lxml.etree as etree
 import os
 import re
@@ -18,7 +19,6 @@ except ImportError:
     SERVER = 'http://sec.gov'
     UASTRING=('Mozilla/5.0 (X11; Linux x86_64; rv:10.0.5) Gecko/20120606'
               + 'Firefox/10.0.5')
-
 HEADER = {'User-Agent' : UASTRING}
 FTYPES = ['schema', # schema: contains detailed info about tag
           'instance', # instance: contains the data
@@ -27,10 +27,13 @@ FTYPES = ['schema', # schema: contains detailed info about tag
           'lab', # label linkbase
           'pre', # presentaion linkbase
 ]
+DATA_HEADERS = ['cik', 'tag', 'value', 'start', 'end', 'segments']
+
 
 def snake_title(string):
     string = string.replace(' ', '')
     return re.sub('(?!^)(A|[A-Z]+)', r'_\1', string).lower() # thanks nickl-
+
 
 def get_schema(uri, refresh=False):
     ''' Gets and parses a schema file from disk or web
@@ -48,8 +51,8 @@ def get_schema(uri, refresh=False):
         page = urllib2.urlopen(req)
         with open(rel_path, 'wb') as f:
             f.write(page.read())
-
     return etree.parse(rel_path)
+
 
 def load_schema(namespace, submission):
     ''' Loads a schema into the submission dictionary   
@@ -60,6 +63,7 @@ def load_schema(namespace, submission):
     if namespace not in submission:
         schema_url = schema_imports[0].attrib['schemaLocation']
         submission[namespace] = get_schema(schema_url)
+
 
 def get_tag_schema(tag, submission):
     ''' Returns the schema element for the tag in question
@@ -76,26 +80,17 @@ def get_tag_schema(tag, submission):
     except AssertionError: # tag schema not imported
         tag_schemas = submission['schema'].xpath("//None:element[@name='%s']" % name, 
                                                  namespaces=root_ns(submission['schema']))
-    assert len(tag_schemas) == 1
+    try:
+        assert len(tag_schemas) == 1
+    except AssertionError:
+        if len(tag_schemas) < 1: 
+            print >> sys.stderr, '%s not found in schema' % tag
+            return None
+        else: raise Exception('multiple %s found in schema' % tag)
     return tag_schemas[0]
 
-def root_ns(parsed_etree, root_tag='None'):
-    return {root_tag: re.match('{(.*)}', parsed_etree.getroot().tag).group(1)}
 
-if __name__ == '__main__':
-    ''' Very simple command line utility for printing XBRL instance data
-
-    base_fname: The base filename of the XBRL submission
-    reporting_data_fname: The filename containing the tags you
-                          want to display using the format
-                              [NAMESPACE]:[TAG NAME]
-                          If you omit the [TAG NAME], every 
-                          element in the namespace that is in the
-                          XBRL instance will be printed.   
-
-    '''
-    base_fname = sys.argv[1]
-    reporting_data_fname = sys.argv[2]
+def load_submission(base_fname):
     submission = {}
     for ftype in FTYPES:
         try:
@@ -107,21 +102,50 @@ if __name__ == '__main__':
                 submission[ftype] = etree.parse('%s_%s.xml' % (base_fname, ftype))
         except IOError as err:
                 print >> sys.stderr, '%s s missing' % ftype.upper()
-    inst_ns = submission['instance'].getroot().nsmap
-    if None in inst_ns:
-        try:
-            if inst_ns[None] == inst_ns['xbrli']: inst_ns.pop(None)
-        except KeyError:    
-            inst_ns.update(root_ns(submission['instance'], root_tag='xbrli'))
-            inst_ns.pop(None)
-    cik = submission['instance'].xpath('./dei:EntityCentralIndexKey', namespaces=inst_ns)
-    assert len(cik) == 1
-    cik = cik[0].text
+    return submission
 
-    with open(reporting_data_fname, 'r') as f:
-        data_requests = [ line.strip().split('#')[0] for line in f.read().split('\n') ]
-        data_requests = [ data_request for data_request in data_requests if data_request != '' ]
-        
+
+def clean_instance_namespace(submission):    
+    instance_namespace = submission['instance'].getroot().nsmap
+    if None in instance_namespace:
+        try:
+            if instance_namespace[None] == instance_namespace['xbrli']: instance_namespace.pop(None)
+        except KeyError:    
+            instance_namespace.update(root_ns(submission['instance'], root_tag='xbrli'))
+            instance_namespace.pop(None)
+    return instance_namespace
+
+
+def get_cik(submission):
+    try:
+        cik = submission['instance'].xpath('./dei:EntityCentralIndexKey', namespaces=submission['instance'].getroot().nsmap)
+    except TypeError:
+        inst_ns = clean_instance_namespace(submission)
+        cik = submission['instance'].xpath('./dei:EntityCentralIndexKey', namespaces=inst_ns)
+
+    try:
+        assert len(cik) == 1
+    except AssertionError:
+        if len(cik) > 1:
+            raise Exception('Submission %s has more than one cik' % submission_root_filename)
+        else:
+            raise Exception('Submission %s has no cik' % submission_root_filename)
+    return int(cik[0].text)
+
+
+def listify_commented_file(fname, comment_symbol='#'):
+    with open(fname, 'r') as f:
+        lines = [ line.strip().split('#')[0] for line in f.read().split('\n') ]
+        lines = [ line for line in lines if line != '' ]
+    return lines
+
+
+def extract_data(submission, data_requests):
+    ''' Extracts data into a list of dicts
+    '''
+    rows = []
+    cik = get_cik(submission)
+    inst_ns = clean_instance_namespace(submission)
     for data_request in data_requests:
         namespace_key, name = data_request.split(':')
         namespace = submission['instance'].getroot().nsmap[namespace_key]
@@ -138,31 +162,72 @@ if __name__ == '__main__':
         for name in names:
             tag = '%s:%s' % (namespace_key, name)
             schema = get_tag_schema('{%s}%s' % (namespace, name), submission)
-            period_type = schema.attrib["{%s}periodType" % inst_ns['xbrli']]
-            for r in submission['instance'].xpath('//%s' % tag, namespaces=inst_ns):
-                context_ref = r.attrib['contextRef']
-                context = submission['instance'].xpath("//xbrli:context[@id='%s']" % context_ref, namespaces=inst_ns)
-                assert len(context) == 1
-                context = context[0]
+            if schema is not None:
+                period_type = schema.attrib["{%s}periodType" % inst_ns['xbrli']]
+                for r in submission['instance'].xpath('//%s' % tag, namespaces=inst_ns):
+                    row = {'cik': cik, 'tag': tag, 'value': r.text, 'segments': None}
+                    context_ref = r.attrib['contextRef']
+                    context = submission['instance'].xpath("//xbrli:context[@id='%s']" % context_ref, namespaces=inst_ns)
+                    assert len(context) == 1
+                    context = context[0]
 
-                entity = context.xpath("./xbrli:entity", namespaces=inst_ns)[0]
-                period = context.xpath("./xbrli:period", namespaces=inst_ns)[0]
+                    entity = context.xpath("./xbrli:entity", namespaces=inst_ns)[0]
+                    period = context.xpath("./xbrli:period", namespaces=inst_ns)[0]
 
-                if period_type == 'instant': 
-                    period = (period.getchildren()[0].text, )
-                elif period_type == 'duration': 
-                    period = (period.xpath("./xbrli:startDate", namespaces=inst_ns)[0].text, 
-                              period.xpath("./xbrli:endDate", namespaces=inst_ns)[0].text)
+                    if period_type == 'instant': 
+                        row['start'] = period.xpath("./xbrli:instant", namespaces=inst_ns)[0].text
+                        row['end'] = None
+                    elif period_type == 'duration': 
+                        row['start'] = period.xpath("./xbrli:startDate", namespaces=inst_ns)[0].text
+                        row['end'] = period.xpath("./xbrli:endDate", namespaces=inst_ns)[0].text
+
+#                    identifier = entity.xpath("./xbrli:identifier[@scheme]", namespaces=inst_ns)
+#                    assert len(identifier) == 1
+#                    identifier = identifier[0]
+
+                    segments = entity.xpath('./xbrli:segment', namespaces=inst_ns)
+                    for segment in segments:
+                        for d in segment.iterdescendants():
+                            if d.text is None: d.text = ''
+                            descendant_info = ', '.join([str(d.attrib), d.text])
+                            try:
+                                row['segments'] = '; '.join([row['segments'], descendant_info])
+                            except TypeError as err:
+                                row['segments'] = descendant_info
+                    rows += [row]
+    return rows
 
 
-                identifier = entity.xpath("./xbrli:identifier[@scheme]", namespaces=inst_ns)
-                assert len(identifier) == 1
-                identifier = identifier[0]
-                segments = entity.xpath('./xbrli:segment', namespaces=inst_ns)
-                segment_info = ''
-                for segment in segments:
-                    for d in segment.iterdescendants():
-                        if d.text is None: d.text = ''
-                        segment_info = ', '.join([str(d.attrib), d.text])
-                if r.text is None: r.text = ''
-                print ', '.join([cik, tag, r.text] + list(period) + [segment_info])
+def print_data(rows):
+    ''' Print csv-formatted data to stdout
+    '''
+    s = StringIO()
+    c = csv.DictWriter(s, DATA_HEADERS)
+    c.writerows(rows)
+    s.seek(0)
+    print s.read()
+
+
+def root_ns(parsed_etree, root_tag='None'):
+    return {root_tag: re.match('{(.*)}', parsed_etree.getroot().tag).group(1)}
+
+
+if __name__ == '__main__':
+    ''' Very simple command line utility for printing XBRL instance data
+
+    base_fname: The base filename of the XBRL submission
+    reporting_data_fname: The filename containing the tags you
+                          want to display using the format
+                              [NAMESPACE]:[TAG NAME]
+                          If you omit the [TAG NAME], every 
+                          element in the namespace that is in the
+                          XBRL instance will be printed.   
+
+    '''
+    base_fname = sys.argv[1]
+    reporting_data_fname = sys.argv[2]
+    submission = load_submission(base_fname)
+    data_requests = listify_commented_file(reporting_data_fname)
+
+    rows = extract_data(submission, data_requests)
+    print_data(rows)
