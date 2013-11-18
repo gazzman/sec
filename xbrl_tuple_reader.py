@@ -1,5 +1,5 @@
 #!/usr/bin/python
-__version__ = ".01"
+__version__ = ".02"
 __author__ = "gazzman"
 __copyright__ = "(C) gazzman GNU GPL 3."
 __contributors__ = []
@@ -81,22 +81,17 @@ def extract_data(submission, header_tag_tuples):
                 if period_type == 'instant': 
                     instant = period.xpath("./xbrli:instant", namespaces=instance_namespace)[0].text
                     instant = datetime.strptime(instant, DATEFMT)
-                    bops = [ d for d in durations if abs(d[0] - instant).days <= 1 ]
-                    eops = [ d for d in durations if abs(d[1] - instant).days <= 1 ]
-                    bop_rowkeys = [ tuple(zip(ROWKEY, 
+                    def apply_period_boundaries(index, prefix):
+                        ps = [ d for d in durations if abs(d[index] - instant).days <= 1 ]
+                        rowkeys = [ tuple(zip(ROWKEY, 
                                           (cik, period_end_date, submission['time'], 
                                            segment_info, submission_period_focus,
                                            start.date().isoformat(), end.date().isoformat())))
-                                    for start, end in bops ]
-                    eop_rowkeys = [ tuple(zip(ROWKEY, 
-                                          (cik, period_end_date, submission['time'], 
-                                           segment_info, submission_period_focus,
-                                           start.date().isoformat(), end.date().isoformat())))
-                                    for start, end in eops ]
-                    for bop_rowkey in bop_rowkeys:
-                        add_data(rows, bop_rowkey, 'BoP %s' % header, e.text)
-                    for eop_rowkey in eop_rowkeys:
-                        add_data(rows, eop_rowkey, 'EoP %s' % header, e.text)
+                                    for start, end in ps ]
+                        for rowkey in rowkeys:
+                            add_data(rows, rowkey, '%s %s' % (prefix, header), e.text)
+                    apply_period_boundaries(0, 'BoP')
+                    apply_period_boundaries(1, 'EoP')
                 elif period_type == 'duration': 
                     start = period.xpath("./xbrli:startDate", namespaces=instance_namespace)[0].text
                     end = period.xpath("./xbrli:endDate", namespaces=instance_namespace)[0].text
