@@ -1,4 +1,9 @@
 #!/usr/bin/python
+__version__ = ".00"
+__author__ = "gazzman"
+__copyright__ = "(C) gazzman GNU GPL 3."
+__contributors__ = []
+
 from StringIO import StringIO
 import csv
 import pickle
