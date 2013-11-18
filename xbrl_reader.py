@@ -129,9 +129,9 @@ def get_singleton_tag_value(submission, tag):
         assert len(v) == 1
     except AssertionError:
         if len(v) > 1:
-            raise Exception('Submission %s has more than one %s' % (submission_root_filename, tag))
+            raise LookupError('Submission has more than one %s' % tag)
         else:
-            raise Exception('Submission %s has no %s' % (submission_root_filename, tag))
+            raise LookupError('Submission has no %s' % tag)
     return v[0].text
 
 
