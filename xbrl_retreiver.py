@@ -8,6 +8,7 @@ __contributors__ = []
 from collections import namedtuple
 try: from collections import OrderedDict # >= 2.7
 except ImportError: from ordereddict import OrderedDict # 2.6
+import argparse
 import lxml.etree as etree
 import os
 import pickle
@@ -38,8 +39,8 @@ class CIKFinder:
             print >> sys.stdout, msg
             self.cik_dict = {}
 
-    def get_cik(self, symbol):
-        if symbol not in self.cik_dict:
+    def get_cik(self, symbol, refresh=False):
+        if symbol not in self.cik_dict or refresh is True:
             url = (SERVER + '/cgi-bin/browse-edgar?company=&match=&CIK=' + 
                    symbol + '&filenum=&State=&Country=&SIC=&owner=exclude&' + 
                    'Find=Find+Companies&action=getcompany')
@@ -112,7 +113,7 @@ class FilingURLs:
         verbose -- Print extra information
 
         """
-        if len(self.submissions) == 0 or refresh:
+        if len(self.submissions) == 0 or refresh is True:
             start = 0
             d = feedparser.parse(self.feed_url(self.cik, start))
             while len(d.entries) > 0:
@@ -215,13 +216,16 @@ class FilingURLs:
         print >> sys.stderr, 'Additional schemas pulled.'
 
 if __name__ == '__main__':
-    """First argument is the stock ticker
-        
-    """
-    t = sys.argv[1]
+    description = 'Simple utility for pulling EDGAR XBRL submissions.'
+
+    p = argparse.ArgumentParser(description=description)
+    p.add_argument('symbol', help="Ticker symbol")
+    p.add_argument('--refresh', action="store_true", help="Refresh data")
+    args = p.parse_args()
+
     c = CIKFinder()
-    cik = c.get_cik(t)
+    cik = c.get_cik(args.symbol, refresh=args.refresh)
     f = FilingURLs(cik)
-    f.pull_xbrl_urls()
-    f.save_xbrl_filings()
-    f.import_additional_schemas()
+    f.pull_xbrl_urls(refresh=args.refresh)
+    f.save_xbrl_filings(refresh=args.refresh)
+    f.import_additional_schemas(refresh=args.refresh)
