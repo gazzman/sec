@@ -1,6 +1,6 @@
 #!/usr/bin/python
 
-__version__ = ".01"
+__version__ = ".02"
 __author__ = "gazzman"
 __copyright__ = "(C) gazzman GNU GPL 3."
 __contributors__ = []
