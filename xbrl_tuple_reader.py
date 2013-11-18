@@ -1,9 +1,10 @@
 #!/usr/bin/python
-__version__ = ".00"
+__version__ = ".01"
 __author__ = "gazzman"
 __copyright__ = "(C) gazzman GNU GPL 3."
 __contributors__ = []
 
+from datetime import datetime
 from StringIO import StringIO
 import csv
 import pickle
@@ -11,12 +12,43 @@ import sys
 
 from sec import xbrl_reader as xr
 
-ROWKEY = ('CIK', 'Reporting Period End Date', 'Submission Time', 'Period Start', 'Period End', 'Segments')
+ROWKEY = ('CIK', 'Reporting Period End Date', 'Submission Time', 'Segments',
+          'Submission Period Focus', 'Period Start', 'Period End')
+DATEFMT = '%Y-%m-%d'
+
+
+def add_data(rows, rowkey, header, data):
+    try:
+        rows[rowkey][header] = data
+    except KeyError:
+        rows[rowkey] = {header: data}
+
+
+def durations_covered(submission):
+    instance_namespace = xr.clean_instance_namespace(submission)
+    periods = submission['instance'].xpath('//xbrli:period', namespaces=instance_namespace)
+    durations = [ (period.xpath('./xbrli:startDate', namespaces=instance_namespace)[0].text,
+                   period.xpath('./xbrli:endDate', namespaces=instance_namespace)[0].text)
+                 for period in periods 
+                 if len(period.xpath('./xbrli:startDate', namespaces=instance_namespace)) == 1 ]
+    durations = list(set(durations))
+    durations.sort()
+    durations = [ (datetime.strptime(d[0], DATEFMT), 
+                   datetime.strptime(d[1], DATEFMT)) for d in durations ]
+    return durations
+
 
 def extract_data(submission, header_tag_tuples):
     instance_namespace = xr.clean_instance_namespace(submission)
     cik = int(xr.get_singleton_tag_value(submission, 'dei:EntityCentralIndexKey'))
     period_end_date = xr.get_singleton_tag_value(submission, 'dei:DocumentPeriodEndDate')
+    try:
+        fiscal_year = xr.get_singleton_tag_value(submission, 'dei:DocumentFiscalYearFocus')
+        fiscal_period = xr.get_singleton_tag_value(submission, 'dei:DocumentFiscalPeriodFocus')
+        submission_period_focus = '%s%s' % (fiscal_year, fiscal_period)
+    except LookupError:
+        submission_period_focus = None
+    durations = durations_covered(submission)
 
     rows = {}
     for header, tag in header_tag_tuples:
@@ -35,13 +67,6 @@ def extract_data(submission, header_tag_tuples):
                 period = context.xpath("./xbrli:period", namespaces=instance_namespace)[0]
                 entity = context.xpath("./xbrli:entity", namespaces=instance_namespace)[0]
 
-                if period_type == 'instant': 
-                    start = period.xpath("./xbrli:instant", namespaces=instance_namespace)[0].text
-                    end =  None
-                elif period_type == 'duration': 
-                    start = period.xpath("./xbrli:startDate", namespaces=instance_namespace)[0].text
-                    end = period.xpath("./xbrli:endDate", namespaces=instance_namespace)[0].text
-
                 segments = entity.xpath('./xbrli:segment', namespaces=instance_namespace)
                 segment_info = None
                 for segment in segments:
@@ -52,11 +77,32 @@ def extract_data(submission, header_tag_tuples):
                             segment_info = '; '.join([segment_info, descendant_info])
                         except TypeError:
                             segment_info = descendant_info
-                rowkey = tuple(zip(ROWKEY, (cik, period_end_date, submission['time'], start, end, segment_info)))
-                try:
-                    rows[rowkey][header] = e.text
-                except KeyError:
-                    rows[rowkey] = {header: e.text}
+
+                if period_type == 'instant': 
+                    instant = period.xpath("./xbrli:instant", namespaces=instance_namespace)[0].text
+                    instant = datetime.strptime(instant, DATEFMT)
+                    bops = [ d for d in durations if abs(d[0] - instant).days <= 1 ]
+                    eops = [ d for d in durations if abs(d[1] - instant).days <= 1 ]
+                    bop_rowkeys = [ tuple(zip(ROWKEY, 
+                                          (cik, period_end_date, submission['time'], 
+                                           segment_info, submission_period_focus,
+                                           start.date().isoformat(), end.date().isoformat())))
+                                    for start, end in bops ]
+                    eop_rowkeys = [ tuple(zip(ROWKEY, 
+                                          (cik, period_end_date, submission['time'], 
+                                           segment_info, submission_period_focus,
+                                           start.date().isoformat(), end.date().isoformat())))
+                                    for start, end in eops ]
+                    for bop_rowkey in bop_rowkeys:
+                        add_data(rows, bop_rowkey, 'BoP %s' % header, e.text)
+                    for eop_rowkey in eop_rowkeys:
+                        add_data(rows, eop_rowkey, 'EoP %s' % header, e.text)
+                elif period_type == 'duration': 
+                    start = period.xpath("./xbrli:startDate", namespaces=instance_namespace)[0].text
+                    end = period.xpath("./xbrli:endDate", namespaces=instance_namespace)[0].text
+                    rowkey = tuple(zip(ROWKEY, (cik, period_end_date, submission['time'], segment_info, 
+                                                submission_period_focus, start, end)))
+                    add_data(rows, rowkey, header, e.text)
     return rows
 
 
@@ -64,7 +110,10 @@ def print_data(rows, header_tag_tuples):
     ''' Print csv-formatted data to stdout
     '''
     s = StringIO()
-    headers = list(ROWKEY) + [ htt[0] for htt in header_tag_tuples ]
+    data_headers = [ k for v in rows.values() for k in v ]
+    data_headers = list(set(data_headers))
+    data_headers.sort()
+    headers = list(ROWKEY) + data_headers
     c = csv.DictWriter(s, headers)
     rowdicts = [ dict(list(k) + rows[k].items()) for k in rows ]
     c.writerows(rowdicts)
