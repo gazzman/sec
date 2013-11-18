@@ -27,7 +27,8 @@ FTYPES = ['schema', # schema: contains detailed info about tag
           'lab', # label linkbase
           'pre', # presentaion linkbase
 ]
-DATA_HEADERS = ['cik', 'tag', 'value', 'start', 'end', 'segments']
+DATA_HEADERS = ['cik', 'period_end_date', 'submission_time', 'tag', 'value', 
+                'start', 'end', 'segments']
 
 
 def snake_title(string):
@@ -54,13 +55,13 @@ def get_schema(uri, refresh=False):
     return etree.parse(rel_path)
 
 
-def load_schema(namespace, submission):
+def load_schema(namespace, submission, refresh=False):
     ''' Loads a schema into the submission dictionary   
     '''
-    schema_imports = submission['schema'].xpath("//None:import[@namespace='%s']" % namespace, 
-                                                namespaces=root_ns(submission['schema']))
-    assert len(schema_imports) == 1
-    if namespace not in submission:
+    if namespace not in submission or refresh == True:
+        schema_imports = submission['schema'].xpath("//None:import[@namespace='%s']" % namespace, 
+                                                    namespaces=root_ns(submission['schema']))
+        assert len(schema_imports) == 1
         schema_url = schema_imports[0].attrib['schemaLocation']
         submission[namespace] = get_schema(schema_url)
 
@@ -90,7 +91,7 @@ def get_tag_schema(tag, submission):
     return tag_schemas[0]
 
 
-def load_submission(base_fname):
+def load_submission(base_fname, submission_time=None):
     submission = {}
     for ftype in FTYPES:
         try:
@@ -102,6 +103,7 @@ def load_submission(base_fname):
                 submission[ftype] = etree.parse('%s_%s.xml' % (base_fname, ftype))
         except IOError as err:
                 print >> sys.stderr, '%s s missing' % ftype.upper()
+    submission['time'] = submission_time
     return submission
 
 
@@ -116,21 +118,21 @@ def clean_instance_namespace(submission):
     return instance_namespace
 
 
-def get_cik(submission):
+def get_singleton_tag_value(submission, tag):
     try:
-        cik = submission['instance'].xpath('./dei:EntityCentralIndexKey', namespaces=submission['instance'].getroot().nsmap)
+        v = submission['instance'].xpath('./%s' % tag, namespaces=submission['instance'].getroot().nsmap)
     except TypeError:
         inst_ns = clean_instance_namespace(submission)
-        cik = submission['instance'].xpath('./dei:EntityCentralIndexKey', namespaces=inst_ns)
+        v = submission['instance'].xpath('./%s' % tag, namespaces=inst_ns)
 
     try:
-        assert len(cik) == 1
+        assert len(v) == 1
     except AssertionError:
-        if len(cik) > 1:
-            raise Exception('Submission %s has more than one cik' % submission_root_filename)
+        if len(v) > 1:
+            raise Exception('Submission %s has more than one %s' % (submission_root_filename, tag))
         else:
-            raise Exception('Submission %s has no cik' % submission_root_filename)
-    return int(cik[0].text)
+            raise Exception('Submission %s has no %s' % (submission_root_filename, tag))
+    return v[0].text
 
 
 def listify_commented_file(fname, comment_symbol='#'):
@@ -144,7 +146,8 @@ def extract_data(submission, data_requests):
     ''' Extracts data into a list of dicts
     '''
     rows = []
-    cik = get_cik(submission)
+    cik = int(get_singleton_tag_value(submission, 'dei:EntityCentralIndexKey'))
+    period_end_date = get_singleton_tag_value(submission, 'dei:DocumentPeriodEndDate')
     inst_ns = clean_instance_namespace(submission)
     for data_request in data_requests:
         namespace_key, name = data_request.split(':')
@@ -165,7 +168,9 @@ def extract_data(submission, data_requests):
             if schema is not None:
                 period_type = schema.attrib["{%s}periodType" % inst_ns['xbrli']]
                 for r in submission['instance'].xpath('//%s' % tag, namespaces=inst_ns):
-                    row = {'cik': cik, 'tag': tag, 'value': r.text, 'segments': None}
+                    row = {'cik': cik, 'period_end_date': period_end_date, 
+                           'submission_time': submission['time'], 'tag': tag, 
+                           'value': r.text, 'segments': None}
                     context_ref = r.attrib['contextRef']
                     context = submission['instance'].xpath("//xbrli:context[@id='%s']" % context_ref, namespaces=inst_ns)
                     assert len(context) == 1
@@ -205,6 +210,7 @@ def print_data(rows):
     c = csv.DictWriter(s, DATA_HEADERS)
     c.writerows(rows)
     s.seek(0)
+    print ','.join(DATA_HEADERS)
     print s.read()
 
 
@@ -215,7 +221,8 @@ def root_ns(parsed_etree, root_tag='None'):
 if __name__ == '__main__':
     ''' Very simple command line utility for printing XBRL instance data
 
-    base_fname: The base filename of the XBRL submission
+    base_fname: The base filename of the XBRL submission retreived
+                by the xbrl_retreiver.py utility.
     reporting_data_fname: The filename containing the tags you
                           want to display using the format
                               [NAMESPACE]:[TAG NAME]
@@ -226,8 +233,9 @@ if __name__ == '__main__':
     '''
     base_fname = sys.argv[1]
     reporting_data_fname = sys.argv[2]
-    submission = load_submission(base_fname)
-    data_requests = listify_commented_file(reporting_data_fname)
 
+    submission_time = base_fname.split('/')[-1].split('_')[0]
+    submission = load_submission(base_fname, submission_time)
+    data_requests = listify_commented_file(reporting_data_fname)
     rows = extract_data(submission, data_requests)
     print_data(rows)
