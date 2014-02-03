@@ -1,5 +1,5 @@
 #!/usr/bin/python
-__version__ = ".00"
+__version__ = ".01"
 __author__ = "gazzman"
 __copyright__ = "(C) gazzman GNU GPL 3."
 __contributors__ = []
@@ -34,6 +34,9 @@ if __name__ == '__main__':
     '''
     base_fname = sys.argv[1]
     fields_fname = sys.argv[2]
+    ofext = os.path.split(fields_fname)[-1]
+    if len(sys.argv) == 4: ofname = '%s.%s' % (sys.argv[3], ofext)
+    else: ofname = '%s.%s' % (base_fname, ofext)
 
     submission_time = base_fname.split('/')[-1].split('_')[0]
     submission = xr.load_submission(base_fname, submission_time)
@@ -50,7 +53,7 @@ if __name__ == '__main__':
             if len(tags) == 0: print LABELNOTFOUND % label
 
         # associate tag with label
-        if len(tags) == 1 and tags[0]:
+        if len(tags) == 1:
             header_tags[field] = tags[0]
         elif len(tags) > 1:
             output = 'The following tag IDs have been found:\n\n'
@@ -71,4 +74,4 @@ if __name__ == '__main__':
             header_tags[field] = tag
 
     # pickle fieldnames for xbrl_tuple_reader.py
-    pickle.dump(header_tags.items(), open('%s.%s' % (base_fname, os.path.split(fields_fname)[-1]), 'w'))
+    pickle.dump(header_tags.items(), open(ofname, 'w'))
