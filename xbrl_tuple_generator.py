@@ -72,6 +72,20 @@ if __name__ == '__main__':
                 while verify not in ['y', 'n']:
                     verify = raw_input('%s\nIs this correct? ' % you_chose).strip().lower()
             header_tags[field] = tag
+        else:
+            custom_tag = ''
+            while custom_tag not in ['y', 'n']:
+                custom_tag = raw_input('Would you like to enter a custom tag (y/N)? ').strip().lower()
+                if custom_tag == '': custom_tag = 'n'
+            if custom_tag == 'y':
+                verify = 'n'
+                while verify == 'n':
+                    tag = raw_input('Enter custom tag: ')
+                    you_chose = 'You chose \'%s\' as the tag for \'%s\'' % (tag, field)
+                    verify = raw_input('%s\nIs this correct? ' % you_chose).strip().lower()
+                    while verify not in ['y', 'n']:
+                        verify = raw_input('%s\nIs this correct? ' % you_chose).strip().lower()
+                header_tags[field] = tag
 
     # pickle fieldnames for xbrl_tuple_reader.py
     pickle.dump(header_tags.items(), open(ofname, 'w'))
