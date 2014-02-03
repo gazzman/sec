@@ -36,7 +36,7 @@ if __name__ == '__main__':
     fields_fname = sys.argv[2]
     ofext = os.path.split(fields_fname)[-1]
     if len(sys.argv) == 4: ofname = '%s.%s' % (sys.argv[3], ofext)
-    else: ofname = '%s.%s' % (base_fname, ofext)
+    else: ofname = '%s_%s' % (base_fname, ofext)
 
     submission_time = base_fname.split('/')[-1].split('_')[0]
     submission = xr.load_submission(base_fname, submission_time)
