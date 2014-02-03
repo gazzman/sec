@@ -35,7 +35,7 @@ if __name__ == '__main__':
     base_fname = sys.argv[1]
     fields_fname = sys.argv[2]
     ofext = os.path.split(fields_fname)[-1]
-    if len(sys.argv) == 4: ofname = '%s.%s' % (sys.argv[3], ofext)
+    if len(sys.argv) == 4: ofname = '%s_%s' % (sys.argv[3], ofext)
     else: ofname = '%s_%s' % (base_fname, ofext)
 
     submission_time = base_fname.split('/')[-1].split('_')[0]
