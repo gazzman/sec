@@ -20,7 +20,9 @@ For example:
     $ echo Assets > fields
     $ echo Liabilities >> fields
 
-3. Then run the xbrl_tuple_generator.py, eg.:
+3. Then run the xbrl_tuple_generator.py.
+
+For example:
 
     $ xbrl_tuple_generator.py 2013-11-05T17:08:04+00:00_10-Q_xom-20130930 fields xom
     Please enter the label for Assets or press 's' to skip: total assets
@@ -50,14 +52,16 @@ This will result in a pickled list of tuples stored in `xom_fields`. The
 tuples associate the fields you specified to an XML tag in the XBRL data file.
 
 4. From here, run xbrl_tuple_reader.py to extract and print the fields of 
-interest to STDOUT, eg.:
+interest to STDOUT
+
+For example:
 
     $ xbrl_tuple_reader.py 2013-11-05T17:08:04+00:00_10-Q_xom-20130930 xom_fields
     CIK,Reporting Period End Date,Submission Time,Segments,Submission Period Focus,Period Start,Period End,BoP Assets,BoP Liabilities,EoP Assets,EoP Liabilities
     34088,2013-09-30,2013-11-05T17:08:04+00:00,,2013Q3,2013-01-01,2013-09-30,333795000000,162135000000,347564000000,172086000000
 
 5. You can use your favorite shell-scripting language to extract data from 
-multiple filings, eg.
+multiple filings, for example
 
 extractor.bash:
 
@@ -78,9 +82,9 @@ extractor.bash:
 
 (merge_csvs can be found in the http://github.com/gazzman/data_cleaning repo) 
 
-Then run
+Then run:
 
-    `$ extractor.bash xom_fields`
+    $ extractor.bash xom_fields
 
 to generate a file called `xom_fields.csv` that looks like this:
     
