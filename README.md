@@ -57,6 +57,8 @@ interest to STDOUT, eg.
 5. You can use your favorite shell-scripting language to extract data from 
 multiple filings, eg.
 
+extractor.bash:
+
     #!/bin/bash
     PTUPLE=$1
     echo "" > csvs
