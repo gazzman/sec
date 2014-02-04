@@ -57,6 +57,7 @@ interest to STDOUT, eg.
 5. You can use your favorite shell-scripting language to extract data from 
 multiple filings, eg.
 
+    #!/bin/bash
     PTUPLE=$1
     echo "" > csvs
     for base in `ls | grep xsd | awk -F . '{print $1}'`
