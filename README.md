@@ -56,9 +56,7 @@ interest to STDOUT, eg.
 
 5. You can use your favorite shell-scripting language to extract data from 
 multiple filings, eg.
-`
-    $ echo extractor.bash
-    #!/bin/bash
+
     PTUPLE=$1
     echo "" > csvs
     for base in `ls | grep xsd | awk -F . '{print $1}'`
@@ -72,7 +70,7 @@ multiple filings, eg.
     	rm $f
     done
     rm csvs
-`
+
 (merge_csvs can be found in the http://github.com/gazzman/data_cleaning repo) 
 
 Then run
