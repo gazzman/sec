@@ -7,7 +7,9 @@ Example: Extracting Data from an XOM 10-Q
 -----------------------------------------
 
 1. The first step is to run xbrl_retreiver.py. This will collect
-all of the 10-Q and 10-K filings for a particular ticker, eg.:
+all of the 10-Q and 10-K filings for a particular ticker
+
+For example:
 
     $ xbrl_retreiver.py XOM
 
