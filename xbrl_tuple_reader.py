@@ -5,6 +5,7 @@ __copyright__ = "(C) gazzman GNU GPL 3."
 __contributors__ = []
 
 from datetime import datetime
+from collections import OrderedDict
 from StringIO import StringIO
 import csv
 import pickle
@@ -101,21 +102,38 @@ def extract_data(submission, header_tag_tuples):
     return rows
 
 
-def print_data(rows, header_tag_tuples):
-    ''' Print csv-formatted data to stdout
-    '''
-    s = StringIO()
+def listify_data(rows, header_tag_tuples):
     data_headers = [ k for v in rows.values() for k in v ]
     data_headers = list(set(data_headers))
     data_headers.sort()
     headers = list(ROWKEY) + data_headers
-    c = csv.DictWriter(s, headers)
     rowdicts = [ dict(list(k) + rows[k].items()) for k in rows ]
+    return headers, rowdicts
+
+
+def print_data(headers, rowdicts):
+    ''' Print csv-formatted data to stdout
+    '''
+    s = StringIO()
+    c = csv.DictWriter(s, headers)
     c.writerows(rowdicts)
     s.seek(0)
     print ','.join(headers)
     print s.read()
 
+
+def period_aligned(rowdict):
+    try:
+        quarter = int(rowdict['Submission Period Focus'][-1])
+        days = 90*quarter
+    except ValueError:
+        days = 365
+    except TypeError:
+        return False
+    start = datetime.strptime(rowdict['Period Start'], '%Y-%m-%d')
+    end = datetime.strptime(rowdict['Period End'], '%Y-%m-%d')
+    period_delta = end - start
+    return period_delta.days in range(days-5, days+6)
 
 if __name__ == '__main__':
     ''' Very simple command line utility for printing XBRL instance data
@@ -135,4 +153,10 @@ if __name__ == '__main__':
     submission_time = base_fname.split('/')[-1].split('_')[0]
     submission = xr.load_submission(base_fname, submission_time)
     rows = extract_data(submission, header_tag_tuples)
-    print_data(rows, header_tag_tuples)
+    headers, rowdicts = listify_data(rows, header_tag_tuples)
+    rowdicts = [ rowdict for rowdict in rowdicts if not rowdict['Segments'] ]
+    rowdicts = [ rowdict for rowdict in rowdicts if period_aligned(rowdict) ]
+    rowdicts = [ rowdict for rowdict in rowdicts 
+        if rowdict['Reporting Period End Date'] == rowdict['Period End']
+        ]
+    print_data(headers, rowdicts)
