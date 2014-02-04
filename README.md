@@ -13,7 +13,9 @@ all of the 10-Q and 10-K filings for a particular ticker, eg.:
 
 
 2. Next, create a file of fields you would like to extract from the 
-XBRL filings, eg.:
+XBRL filings.
+
+For example:
 
     $ echo Assets > fields
     $ echo Liabilities >> fields
